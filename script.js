@@ -4,32 +4,48 @@
     var STAGGER_MS = 180;
 
     /* =================================================================
-     *  IFRAME-MANAGEMENT
-     *  - Automatisches Laden wenn sichtbar (Desktop + Mobile)
-     *  - Mobile:  Max. 1 iframe gleichzeitig im DOM
-     *  - Desktop: Max. 2 iframes gleichzeitig im DOM
-     *  - Entladen sobald Container aus dem erweiterten Viewport scrollt
+     *  PERFORMANCE-ERKENNUNG
      * ================================================================= */
 
-    var isMobile = window.matchMedia('(max-width: 900px)').matches
-                || ('ontouchstart' in window);
+    var isMobile = window.matchMedia('(max-width: 900px)').matches;
+    var isTouch  = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    var isMobileDevice = isMobile || isTouch;
 
-    var MAX_ACTIVE = isMobile ? 1 : 2;
+    /* =================================================================
+     *  IFRAME-MANAGEMENT
+     *
+     *  Kernprinzip: Niemals den Main-Thread während des Scrollens blockieren.
+     *
+     *  1. Iframes laden automatisch via IntersectionObserver
+     *  2. Laden/Entladen wird via requestIdleCallback / setTimeout
+     *     vom Scroll-Event entkoppelt (non-blocking)
+     *  3. Mobile: Strikt max. 1 iframe im DOM
+     *  4. Desktop: Max. 2 iframes im DOM
+     *  5. content-visibility: auto auf den Containern (CSS) reduziert
+     *     Rendering-Last für off-screen Sektionen
+     * ================================================================= */
 
-    // Alle Vorschau-Container in Reihenfolge
-    var allContainers = [];
-    // Aktuell aktive (geladene) Container – als Array für FIFO-Verwaltung
+    var MAX_ACTIVE = isMobileDevice ? 1 : 2;
+
+    // Aktuell aktive (geladene) Container – FIFO
     var activeContainers = [];
 
+    // requestIdleCallback Polyfill für Safari
+    var scheduleIdle = window.requestIdleCallback || function (cb) {
+        return setTimeout(cb, 1);
+    };
+
     /**
-     * Erstellt den iframe im Container
+     * Erstellt den iframe – wird NICHT direkt im IO-Callback aufgerufen,
+     * sondern via scheduleIdle, damit der Main-Thread frei bleibt.
      */
     function loadIframe(container) {
-        // Bereits geladen?
-        if (container.querySelector('iframe')) return;
+        // Bereits geladen oder gerade am Laden?
+        if (container._iframeLoading || container.querySelector('iframe')) return;
+        container._iframeLoading = true;
 
         var placeholder = container.querySelector('.cs-iframe-placeholder');
-        if (!placeholder) return;
+        if (!placeholder) { container._iframeLoading = false; return; }
 
         var src   = placeholder.getAttribute('data-src');
         var title = placeholder.getAttribute('data-title') || '';
@@ -37,49 +53,64 @@
         // Lade-Spinner anzeigen
         placeholder.classList.add('is-loading');
 
-        // Wenn wir das Limit überschreiten: ältesten iframe entladen
+        // Wenn wir das Limit überschreiten: ältesten entladen
         while (activeContainers.length >= MAX_ACTIVE) {
             var oldest = activeContainers.shift();
             if (oldest !== container) {
-                unloadIframe(oldest);
+                unloadIframeSync(oldest);
             }
         }
 
         var iframe = document.createElement('iframe');
-        iframe.setAttribute('src', src);
         iframe.setAttribute('title', title);
         iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
-
-        // sandbox: erlaubt Skripte und same-origin, blockiert aber Popups etc.
+        // sandbox: erlaubt Skripte & Same-Origin, aber blockiert
+        // Popups, Downloads, Top-Navigation → weniger Main-Thread-Belastung
         iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+        // Wichtig: loading="lazy" als zusätzliche Browser-Hilfe
+        iframe.setAttribute('loading', 'lazy');
 
-        // Wenn iframe fertig geladen: Placeholder ausblenden (nicht entfernen – brauchen wir zum Wiederherstellen)
+        // Event: iframe fertig geladen → Placeholder ausblenden
         iframe.addEventListener('load', function () {
+            container._iframeLoading = false;
             placeholder.classList.remove('is-loading');
             placeholder.classList.add('is-loaded');
         });
 
-        // Timeout-Fallback: nach 10 Sek. auch ohne load-Event
-        setTimeout(function () {
-            placeholder.classList.remove('is-loading');
-            placeholder.classList.add('is-loaded');
-        }, 10000);
-
+        // Erst in DOM einfügen, DANN src setzen (vermeidet synchrones Laden)
         container.appendChild(iframe);
+
+        // src in eigenem Microtask setzen → Main Thread bleibt frei
+        requestAnimationFrame(function () {
+            iframe.setAttribute('src', src);
+        });
+
         activeContainers.push(container);
+
+        // Timeout-Fallback: nach 12 Sek. Placeholder ausblenden
+        setTimeout(function () {
+            container._iframeLoading = false;
+            if (placeholder.parentNode) {
+                placeholder.classList.remove('is-loading');
+                placeholder.classList.add('is-loaded');
+            }
+        }, 12000);
     }
 
     /**
-     * Entfernt den iframe und zeigt den Placeholder wieder
+     * Entfernt iframe synchron (für FIFO-Eviction)
      */
-    function unloadIframe(container) {
+    function unloadIframeSync(container) {
         var iframe = container.querySelector('iframe');
         if (!iframe) return;
 
-        // iframe komplett aus DOM entfernen → Browser gibt Speicher + GPU frei
-        container.removeChild(iframe);
+        // src leeren bevor wir entfernen → stoppt laufende Netzwerk-Requests
+        iframe.removeAttribute('src');
+        iframe.parentNode.removeChild(iframe);
 
-        // Placeholder wieder sichtbar machen
+        container._iframeLoading = false;
+
+        // Placeholder zurücksetzen
         var placeholder = container.querySelector('.cs-iframe-placeholder');
         if (placeholder) {
             placeholder.classList.remove('is-loading', 'is-loaded');
@@ -91,31 +122,42 @@
     }
 
     /**
-     * Initialisiert das automatische Iframe-Management
+     * Entfernt iframe non-blocking (für IO-Callback)
+     */
+    function unloadIframe(container) {
+        scheduleIdle(function () {
+            unloadIframeSync(container);
+        });
+    }
+
+    /**
+     * Initialisiert das Iframe-Management
      */
     function initIframes() {
-        allContainers = Array.prototype.slice.call(
-            document.querySelectorAll('.cs-preview-full')
-        );
+        var allContainers = document.querySelectorAll('.cs-preview-full');
         if (!allContainers.length) return;
 
         if (!('IntersectionObserver' in window)) {
-            // Fallback ohne IO: nur ersten laden
             loadIframe(allContainers[0]);
             return;
         }
 
-        // rootMargin: auf Mobile enger (weniger pre-loading), auf Desktop etwas großzügiger
-        var margin = isMobile ? '0px 0px 0px 0px' : '300px 0px 300px 0px';
+        // Mobile: rootMargin 0 → erst laden wenn wirklich sichtbar
+        // Desktop: 200px Vorlauf für sanfteren Übergang
+        var margin = isMobileDevice ? '0px 0px 0px 0px' : '200px 0px 200px 0px';
 
         var observer = new IntersectionObserver(function (entries) {
             entries.forEach(function (entry) {
+                var container = entry.target;
+
                 if (entry.isIntersecting) {
-                    // Container kommt in den (erweiterten) Viewport → laden
-                    loadIframe(entry.target);
+                    // Non-blocking laden: im nächsten Idle-Frame
+                    scheduleIdle(function () {
+                        loadIframe(container);
+                    });
                 } else {
-                    // Container verlässt den Viewport komplett → entladen
-                    unloadIframe(entry.target);
+                    // Non-blocking entladen
+                    unloadIframe(container);
                 }
             });
         }, {
@@ -130,13 +172,15 @@
 
 
     /* =================================================================
-     *  SCROLL-ANIMATIONEN (unveränderter Kern)
+     *  SCROLL-ANIMATIONEN
+     *  Optimiert: Ein einziger IntersectionObserver für alle Elemente
      * ================================================================= */
 
-    function initSection(section) {
-        var elements = section.querySelectorAll('.cs-animate');
+    function initAnimations() {
+        var elements = document.querySelectorAll('.cs-animate');
         if (!elements.length) return;
 
+        // js-ready auf alle setzen (Startzustand)
         elements.forEach(function(el) {
             el.classList.add('js-ready');
         });
@@ -149,35 +193,41 @@
             return;
         }
 
-        elements.forEach(function(el) {
-            var index = parseInt(el.dataset.index, 10) || 0;
-            var obs = new IntersectionObserver(function(entries) {
-                entries.forEach(function(entry) {
-                    if (!entry.isIntersecting) return;
+        // EIN einziger Observer für alle Elemente (statt n Observers)
+        var animObs = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                if (!entry.isIntersecting) return;
+
+                var el = entry.target;
+                var index = parseInt(el.dataset.index, 10) || 0;
+
+                // Animation im nächsten Frame schedulen (nicht im IO-Callback)
+                requestAnimationFrame(function () {
                     setTimeout(function() {
                         el.classList.remove('js-ready');
                         el.classList.add('is-visible');
                     }, index * STAGGER_MS);
-                    obs.unobserve(el);
                 });
-            }, {
-                threshold: 0.05,
-                rootMargin: '0px 0px -60px 0px'
+
+                animObs.unobserve(el);
             });
-            obs.observe(el);
+        }, {
+            threshold: 0.05,
+            rootMargin: '0px 0px -60px 0px'
+        });
+
+        elements.forEach(function(el) {
+            animObs.observe(el);
         });
     }
 
-    function init() {
-        // Scroll-Animationen
-        var sections = document.querySelectorAll('.cs-section');
-        if (sections.length) {
-            sections.forEach(function(section) {
-                initSection(section);
-            });
-        }
 
-        // Iframe-Management
+    /* =================================================================
+     *  INIT
+     * ================================================================= */
+
+    function init() {
+        initAnimations();
         initIframes();
     }
 

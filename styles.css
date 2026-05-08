@@ -1,3 +1,15 @@
+/* ===== Reset & Base ===== */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Section Container ===== */
 .cs-section {
     font-family: 'Cabin Condensed', sans-serif;
     color: #000;
@@ -6,10 +18,19 @@
     max-width: 1200px;
     margin: 0 auto;
     font-size: 16px;
-    box-sizing: border-box;
-    overflow-x: hidden; /* Verhindert horizontalen Scrollbalken bei Slide-Animation */
+
+    /*
+     * content-visibility: auto  →  Browser überspringt Rendering
+     * für off-screen Sektionen komplett. DAS ist der größte
+     * Performance-Gewinn auf Mobile.
+     * contain-intrinsic-size gibt dem Browser eine Schätzhöhe,
+     * damit er korrekt scrollen kann ohne zu rendern.
+     */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 900px;
 }
 
+/* ===== Top Grid ===== */
 .cs-top-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -80,6 +101,7 @@
     color: #191B41;
 }
 
+/* ===== Quote ===== */
 .cs-quote-side {
     display: flex;
 }
@@ -98,7 +120,6 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    box-sizing: border-box;
     box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
     transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1), box-shadow 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
 }
@@ -117,6 +138,7 @@
     opacity: 0.8;
 }
 
+/* ===== Preview Container ===== */
 .cs-preview-full {
     width: 100%;
     height: 600px;
@@ -126,6 +148,8 @@
     background: #fff;
     transition: box-shadow 0.3s ease;
     margin-bottom: 0;
+    /* Eigener Stacking-Context – verhindert Repaint-Kaskaden */
+    isolation: isolate;
 }
 
 .cs-preview-full:hover {
@@ -140,13 +164,17 @@
     display: block;
     position: relative;
     z-index: 2;
+    /* iframe bekommt eigenen Compositing-Layer → Scroll des
+       Hauptdokuments wird nicht vom iframe-Rendering blockiert */
+    will-change: auto;
+    transform: translateZ(0);
 }
 
 .cs-preview-hint {
     position: absolute !important;
     top: -16px !important;
     right: 30px !important;
-    z-index: 999 !important;
+    z-index: 10 !important;
     background: rgba(255, 255, 255, 0.95);
     border: 1px solid #eaeaea;
     padding: 6px 16px;
@@ -180,7 +208,6 @@
     transition: opacity 0.5s ease, visibility 0.5s ease;
 }
 
-/* Placeholder-Inhalt: Spinner + Text (vor dem Laden) */
 .cs-placeholder-content {
     display: flex;
     flex-direction: column;
@@ -202,7 +229,7 @@
     opacity: 0.45;
 }
 
-/* Lade-Zustand: Spinner anzeigen */
+/* Lade-Zustand */
 .cs-iframe-placeholder.is-loading .cs-placeholder-content {
     display: none;
 }
@@ -221,7 +248,7 @@
     to { transform: rotate(360deg); }
 }
 
-/* Geladen: Placeholder ausblenden, iframe sichtbar */
+/* Geladen → Placeholder ausblenden */
 .cs-iframe-placeholder.is-loaded {
     opacity: 0;
     visibility: hidden;
@@ -229,45 +256,58 @@
 }
 
 /* ===== Scroll-Animationen ===== */
-/* Standardzustand: sichtbar (Fallback falls JS nicht läuft) */
 .cs-animate {
     opacity: 1;
-    transform: translateX(0) scale(1) translateY(0);
+    transform: translateX(0) translateY(0);
     transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
                 transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
-    /* will-change bewusst NICHT hier – würde dauerhaft GPU-Speicher belegen */
 }
 
-/* JS setzt diesen Startzustand sobald es läuft */
-/* will-change nur hier aktiv: Browser kann GPU-Layer vorbereiten */
 .cs-animate.js-ready {
     opacity: 0;
-    transform: translateX(110px) scale(0.92) translateY(16px);
+    transform: translateX(110px) translateY(16px);
     will-change: transform, opacity;
 }
 
-/* Eingeblendet – will-change wird zurückgesetzt um GPU-Speicher freizugeben */
 .cs-animate.is-visible {
     opacity: 1;
-    transform: translateX(0) scale(1) translateY(0);
+    transform: translateX(0) translateY(0);
     will-change: auto;
 }
 
 /* ===== Responsive ===== */
 @media (max-width: 900px) {
+    .cs-section {
+        /* Geringere Schätzhöhe auf Mobile */
+        contain-intrinsic-size: auto 700px;
+    }
+
     .cs-top-grid {
         grid-template-columns: 1fr;
         gap: 30px;
         margin-bottom: 40px;
     }
+
+    /* Hover-Effekte auf Touch deaktivieren */
     .cs-quote:hover,
     .cs-meta-info:hover {
         transform: none;
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
     }
+
+    .cs-meta-info:hover {
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+    }
+
     .cs-preview-full {
         height: 450px;
         margin-top: 20px;
     }
+
+    .cs-preview-full:hover {
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+    }
+
     .cs-preview-hint {
         animation: none;
         top: -14px !important;
@@ -275,11 +315,23 @@
         font-size: 11px;
         padding: 4px 12px;
     }
+
     .cs-placeholder-icon {
         width: 36px;
         height: 36px;
     }
+
     .cs-placeholder-text {
         font-size: 13px;
+    }
+
+    /* Animationen auf Mobile entschärfen: kein scale(), kein translateX()
+       → deutlich weniger Compositing-Arbeit für den Browser */
+    .cs-animate.js-ready {
+        transform: translateY(30px);
+    }
+
+    .cs-animate.is-visible {
+        transform: translateY(0);
     }
 }
