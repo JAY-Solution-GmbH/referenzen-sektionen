@@ -50,11 +50,6 @@ body {
     font-weight: 400;
     text-transform: uppercase;
     letter-spacing: 1px;
-    transition: background-color 0.3s ease;
-}
-
-.cs-industry-label:hover {
-    background-color: #e6e6e6;
 }
 
 .cs-info-side h3 {
@@ -70,12 +65,6 @@ body {
     padding: 20px;
     border-radius: 0 16px 16px 0;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
-    transition: box-shadow 0.3s ease, transform 0.3s ease;
-}
-
-.cs-meta-info:hover {
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
-    transform: translateX(3px);
 }
 
 .cs-meta-info p {
@@ -111,12 +100,6 @@ body {
     flex-direction: column;
     justify-content: center;
     box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
-    transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1), box-shadow 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
-}
-
-.cs-quote:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
 }
 
 .cs-quote cite {
@@ -129,29 +112,27 @@ body {
 }
 
 /* ===== Preview Container ===== */
-.cs-preview-full {
+.cs-preview-wrap {
     width: 100%;
+    height: clamp(420px, 75vh, 900px);
     position: relative;
     border-radius: 24px;
     background: #f5f5f7;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
     border: 1px solid #e5e7eb;
-    margin-bottom: 0;
     overflow: hidden;
-    /* contain: layout paint → Browser isoliert diesen Container komplett */
     contain: layout paint;
-    /* overflow-anchor verhindert Scroll-Jumps */
     overflow-anchor: none;
 }
 
-.cs-preview-full:hover {
-    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.22);
-}
-
-/* Mount-Container für den iframe */
-.cs-iframe-mount {
+.cs-preview-wrap iframe {
     position: absolute;
     inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+    background: transparent;
 }
 
 .cs-preview-hint {
@@ -168,73 +149,25 @@ body {
     color: #191B41;
     pointer-events: none;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    animation: csHintPulse 2.5s infinite ease-in-out;
-}
-
-@keyframes csHintPulse {
-    0%   { transform: scale(1); }
-    50%  { transform: scale(1.05); box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
-    100% { transform: scale(1); }
-}
-
-/* ===== Iframe Placeholder (Lade-Spinner) ===== */
-.cs-iframe-placeholder {
-    position: absolute;
-    inset: 0;
-    z-index: 3;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #f5f5f7;
-    border-radius: 16px;
-    transition: opacity 0.4s ease;
-}
-
-.cs-iframe-placeholder.is-loaded {
-    opacity: 0;
-    pointer-events: none;
-}
-
-.cs-spinner-wrap {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: rgba(255, 255, 255, 0.85);
-    padding: 8px 16px;
-    border-radius: 999px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    font-family: 'Cabin Condensed', sans-serif;
-    font-size: 14px;
-    color: #555;
-}
-
-.cs-spinner-svg {
-    width: 16px;
-    height: 16px;
-    animation: csSpinner 1s linear infinite;
-}
-
-@keyframes csSpinner {
-    to { transform: rotate(360deg); }
 }
 
 /* ===== Scroll-Animationen ===== */
 .cs-animate {
     opacity: 1;
-    transform: translateX(0) translateY(0);
+    transform: translateY(0);
     transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
                 transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .cs-animate.js-ready {
     opacity: 0;
-    transform: translateX(110px) translateY(16px);
+    transform: translateY(30px);
     will-change: transform, opacity;
 }
 
 .cs-animate.is-visible {
     opacity: 1;
-    transform: translateX(0) translateY(0);
+    transform: translateY(0);
     will-change: auto;
 }
 
@@ -246,33 +179,19 @@ body {
         margin-bottom: 40px;
     }
 
-    .cs-quote:hover,
-    .cs-meta-info:hover {
-        transform: none;
-        box-shadow: inherit;
-    }
-
-    .cs-preview-full {
+    .cs-preview-wrap {
         margin-top: 20px;
     }
 
-    .cs-preview-full:hover {
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+    /* Touch-Scrolling im iframe ermöglichen ohne Hauptseite zu blockieren */
+    .cs-preview-wrap iframe {
+        touch-action: pan-x pan-y;
     }
 
     .cs-preview-hint {
-        animation: none;
         top: 8px;
         right: 12px;
         font-size: 11px;
         padding: 4px 12px;
-    }
-
-    .cs-animate.js-ready {
-        transform: translateY(30px);
-    }
-
-    .cs-animate.is-visible {
-        transform: translateY(0);
     }
 }
