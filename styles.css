@@ -131,16 +131,17 @@ body {
 /* ===== Preview Container ===== */
 .cs-preview-full {
     width: 100%;
-    height: 600px;
     position: relative;
-    border-radius: 16px;
+    border-radius: 24px;
     background: #f5f5f7;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
-    transition: box-shadow 0.3s ease;
+    border: 1px solid #e5e7eb;
     margin-bottom: 0;
     overflow: hidden;
-    /* contain: layout paint → Browser überspringt Rendering wenn off-screen */
+    /* contain: layout paint → Browser isoliert diesen Container komplett */
     contain: layout paint;
+    /* overflow-anchor verhindert Scroll-Jumps */
+    overflow-anchor: none;
 }
 
 .cs-preview-full:hover {
@@ -151,13 +152,6 @@ body {
 .cs-iframe-mount {
     position: absolute;
     inset: 0;
-}
-
-.cs-iframe-mount iframe {
-    width: 100%;
-    height: 100%;
-    border: none;
-    display: block;
 }
 
 .cs-preview-hint {
@@ -259,7 +253,6 @@ body {
     }
 
     .cs-preview-full {
-        height: 450px;
         margin-top: 20px;
     }
 
@@ -269,8 +262,8 @@ body {
 
     .cs-preview-hint {
         animation: none;
-        top: -14px !important;
-        right: 15px !important;
+        top: 8px;
+        right: 12px;
         font-size: 11px;
         padding: 4px 12px;
     }
