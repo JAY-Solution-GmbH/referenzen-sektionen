@@ -18,16 +18,6 @@ body {
     max-width: 1200px;
     margin: 0 auto;
     font-size: 16px;
-
-    /*
-     * content-visibility: auto  →  Browser überspringt Rendering
-     * für off-screen Sektionen komplett. DAS ist der größte
-     * Performance-Gewinn auf Mobile.
-     * contain-intrinsic-size gibt dem Browser eine Schätzhöhe,
-     * damit er korrekt scrollen kann ohne zu rendern.
-     */
-    content-visibility: auto;
-    contain-intrinsic-size: auto 900px;
 }
 
 /* ===== Top Grid ===== */
@@ -148,8 +138,6 @@ body {
     background: #fff;
     transition: box-shadow 0.3s ease;
     margin-bottom: 0;
-    /* Eigener Stacking-Context – verhindert Repaint-Kaskaden */
-    isolation: isolate;
 }
 
 .cs-preview-full:hover {
@@ -162,12 +150,6 @@ body {
     border: none;
     border-radius: 16px;
     display: block;
-    position: relative;
-    z-index: 2;
-    /* iframe bekommt eigenen Compositing-Layer → Scroll des
-       Hauptdokuments wird nicht vom iframe-Rendering blockiert */
-    will-change: auto;
-    transform: translateZ(0);
 }
 
 .cs-preview-hint {
@@ -193,7 +175,7 @@ body {
     100% { transform: scale(1); }
 }
 
-/* ===== Iframe Placeholder (Lade-Indikator) ===== */
+/* ===== Iframe Placeholder (Lade-Indikator, nur Desktop) ===== */
 .cs-iframe-placeholder {
     width: 100%;
     height: 100%;
@@ -255,6 +237,11 @@ body {
     pointer-events: none;
 }
 
+/* ===== Mobile Link-Button (ersetzt iframe auf Mobile) ===== */
+.cs-mobile-link {
+    display: none;
+}
+
 /* ===== Scroll-Animationen ===== */
 .cs-animate {
     opacity: 1;
@@ -275,58 +262,77 @@ body {
     will-change: auto;
 }
 
-/* ===== Responsive ===== */
+/* ========================================================
+   RESPONSIVE – MOBILE
+   ======================================================== */
 @media (max-width: 900px) {
-    .cs-section {
-        /* Geringere Schätzhöhe auf Mobile */
-        contain-intrinsic-size: auto 700px;
-    }
-
     .cs-top-grid {
         grid-template-columns: 1fr;
         gap: 30px;
         margin-bottom: 40px;
     }
 
-    /* Hover-Effekte auf Touch deaktivieren */
+    /* Hover-Effekte auf Touch komplett deaktivieren */
     .cs-quote:hover,
     .cs-meta-info:hover {
         transform: none;
-        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+        box-shadow: inherit;
     }
 
-    .cs-meta-info:hover {
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
-    }
-
+    /* ── Preview-Container auf Mobile: kein iframe ── */
     .cs-preview-full {
-        height: 450px;
+        height: auto;
         margin-top: 20px;
+        box-shadow: none;
+        background: transparent;
     }
 
     .cs-preview-full:hover {
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+        box-shadow: none;
+    }
+
+    /* Iframe + Placeholder auf Mobile komplett ausblenden */
+    .cs-preview-full iframe,
+    .cs-iframe-placeholder {
+        display: none !important;
     }
 
     .cs-preview-hint {
-        animation: none;
-        top: -14px !important;
-        right: 15px !important;
-        font-size: 11px;
-        padding: 4px 12px;
+        display: none;
     }
 
-    .cs-placeholder-icon {
-        width: 36px;
-        height: 36px;
+    /* Stattdessen: Sauberer Link-Button */
+    .cs-mobile-link {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        padding: 18px 24px;
+        background: radial-gradient(circle at center, rgb(70, 68, 111) 0%, rgb(0, 0, 26) 100%);
+        color: #ffffff;
+        text-decoration: none;
+        border-radius: 16px;
+        font-family: 'Cabin Condensed', sans-serif;
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
 
-    .cs-placeholder-text {
-        font-size: 13px;
+    .cs-mobile-link:active {
+        transform: scale(0.98);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
     }
 
-    /* Animationen auf Mobile entschärfen: kein scale(), kein translateX()
-       → deutlich weniger Compositing-Arbeit für den Browser */
+    .cs-mobile-link-icon {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+    }
+
+    /* Animationen auf Mobile deutlich vereinfachen */
     .cs-animate.js-ready {
         transform: translateY(30px);
     }
