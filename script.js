@@ -49,36 +49,39 @@
     }
 
     /**
-     * Viewport-Freeze: off-screen iframes auf display:none setzen
+     * Viewport-Freeze: off-screen iframes auf display:none setzen.
+     * Beobachtet den CONTAINER (hat immer Layout), nicht den iframe
+     * (der bei display:none kein Layout hat → IO würde nie triggern).
      */
     function initViewportFreeze() {
-        allIframes = Array.prototype.slice.call(
-            document.querySelectorAll('.cs-preview-wrap iframe')
-        );
-        if (!allIframes.length) return;
-
+        var containers = document.querySelectorAll('.cs-preview-wrap');
+        if (!containers.length) return;
         if (!('IntersectionObserver' in window)) return;
 
-        // Großzügiger Bereich: iframe wird erst frozen wenn er
-        // 500px außerhalb des Viewports ist
         var obs = new IntersectionObserver(function (entries) {
             entries.forEach(function (entry) {
-                var iframe = entry.target;
+                var iframe = entry.target.querySelector('iframe');
+                if (!iframe) return;
+
                 if (entry.isIntersecting) {
-                    // In der Nähe des Viewports → aktivieren
+                    // Container in Viewport-Nähe → iframe aktivieren
                     iframe.classList.remove('is-frozen');
                 } else {
-                    // Weit weg → einfrieren (display:none)
-                    iframe.classList.add('is-frozen');
+                    // Container weit weg → iframe einfrieren
+                    // NUR wenn der iframe schon geladen wurde
+                    // (sonst blockiert display:none das lazy loading)
+                    if (iframe.getAttribute('src') && iframe.contentDocument) {
+                        iframe.classList.add('is-frozen');
+                    }
                 }
             });
         }, {
             threshold: 0,
-            rootMargin: '500px 0px 500px 0px'
+            rootMargin: '600px 0px 600px 0px'
         });
 
-        allIframes.forEach(function (iframe) {
-            obs.observe(iframe);
+        containers.forEach(function (c) {
+            obs.observe(c);
         });
     }
 
