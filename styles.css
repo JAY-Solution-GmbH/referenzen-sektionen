@@ -18,7 +18,6 @@ body {
     max-width: 1200px;
     margin: 0 auto;
     font-size: 16px;
-    /* Eigener Stacking-Context wie beim Konkurrenten */
     isolation: isolate;
     overflow-anchor: none;
 }
@@ -115,6 +114,14 @@ body {
 }
 
 /* ===== Preview Container ===== */
+/*
+ * Exakt wie beim Konkurrenten:
+ * - overflow: hidden + border-radius → abgerundete Ecken
+ * - contain: layout paint → Rendering-Isolation
+ * - overflow-anchor: none → keine Scroll-Jumps
+ * - Keine will-change, kein transform, kein strict contain
+ *   (der Konkurrent nutzt das auch nicht)
+ */
 .cs-preview-wrap {
     width: 100%;
     height: clamp(420px, 75vh, 900px);
@@ -124,8 +131,7 @@ body {
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
     border: 1px solid #e5e7eb;
     overflow: hidden;
-    /* Maximale Rendering-Isolation */
-    contain: strict;
+    contain: layout paint;
     overflow-anchor: none;
 }
 
@@ -136,29 +142,6 @@ body {
     height: 100%;
     border: none;
     display: block;
-    background: transparent;
-    /* Eigener GPU-Compositing-Layer → Browser kann den Layer
-       beim Scrollen einfach verschieben statt neu zu rendern */
-    transform: translateZ(0);
-    will-change: transform;
-}
-
-/*
- * Während der User scrollt: pointer-events auf iframes deaktivieren.
- * Das verhindert, dass Touch-Events in den iframes verarbeitet werden
- * und den Main Thread blockieren. Wird per JS umgeschaltet.
- */
-.is-scrolling .cs-preview-wrap iframe {
-    pointer-events: none !important;
-}
-
-/*
- * Iframes die weit off-screen sind werden per JS auf display:none gesetzt.
- * Das stoppt ihr Rendering + CSS-Animationen + requestAnimationFrame,
- * ohne den iframe aus dem DOM zu entfernen (= kein Reload nötig).
- */
-.cs-preview-wrap iframe.is-frozen {
-    display: none !important;
 }
 
 .cs-preview-hint {
@@ -209,6 +192,7 @@ body {
         margin-top: 20px;
     }
 
+    /* Konkurrenz nutzt genau das: */
     .cs-preview-wrap iframe {
         touch-action: pan-x pan-y;
     }
