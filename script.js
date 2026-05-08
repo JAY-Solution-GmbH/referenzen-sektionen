@@ -4,24 +4,23 @@
     var STAGGER_MS = 180;
 
     /* =================================================================
-     *  IFRAME-MANAGEMENT
+     *  IFRAME-MANAGEMENT – SEQUENTIELLE WARTESCHLANGE
      *
-     *  Kernprinzip (von digitalisierungshilfe.at übernommen):
-     *  → Jeder iframe wird EINMAL geladen und NIE WIEDER entladen.
-     *  → contain: layout paint (CSS) sorgt dafür, dass off-screen
-     *    iframes kein Rendering verursachen.
-     *  → Das Entladen war der Fehler – jedes Neu-Laden verursacht
-     *    den Freeze.
+     *  Das Problem: Wenn mehrere iframes gleichzeitig laden,
+     *  wird der Mobile-Browser überfordert → Freeze.
      *
-     *  Ablauf:
-     *  1. IntersectionObserver erkennt dass Container sichtbar wird
-     *  2. iframe wird im unsichtbaren offscreen-Container erstellt
-     *  3. Nach dem load-Event wird iframe in den sichtbaren Bereich
-     *     verschoben → Placeholder blendet aus
-     *  4. Observer wird für diesen Container disconnected → fertig
+     *  Lösung: Iframes werden in einer FIFO-Queue nacheinander
+     *  geladen. Nur EINER lädt gleichzeitig. Erst wenn er fertig
+     *  ist (load-Event), startet der nächste.
+     *
+     *  Einmal geladen bleiben iframes im DOM – contain: layout paint
+     *  in CSS sorgt dafür, dass off-screen iframes kein Rendering
+     *  verursachen.
      * ================================================================= */
 
     var offscreenRoot = null;
+    var loadQueue = [];       // Warteschlange: [container, container, ...]
+    var isLoading = false;    // Lädt gerade ein iframe?
 
     function getOffscreenRoot() {
         if (offscreenRoot && document.body.contains(offscreenRoot)) {
@@ -29,27 +28,43 @@
         }
         var el = document.createElement('div');
         el.id = 'offscreen-iframe-root';
-        el.style.position = 'fixed';
-        el.style.top = '-10000px';
-        el.style.left = '-10000px';
-        el.style.width = '1px';
-        el.style.height = '1px';
-        el.style.overflow = 'hidden';
+        el.style.cssText = 'position:fixed;top:-10000px;left:-10000px;width:1px;height:1px;overflow:hidden;';
         document.body.appendChild(el);
         offscreenRoot = el;
         return el;
     }
 
-    function loadIframe(container) {
-        var mount = container.querySelector('.cs-iframe-mount');
-        if (!mount || container._iframeDone) return;
+    /**
+     * Fügt einen Container in die Warteschlange ein
+     */
+    function enqueueIframe(container) {
+        if (container._iframeDone || container._iframeQueued) return;
+        container._iframeQueued = true;
+        loadQueue.push(container);
+        processQueue();
+    }
 
+    /**
+     * Verarbeitet die Warteschlange – lädt den nächsten iframe
+     * (nur wenn gerade keiner lädt)
+     */
+    function processQueue() {
+        if (isLoading || loadQueue.length === 0) return;
+
+        var container = loadQueue.shift();
+
+        // Falls schon geladen (z.B. durch doppelten Trigger), weiter
+        if (container._iframeDone) {
+            processQueue();
+            return;
+        }
+
+        isLoading = true;
+        container._iframeDone = true;
+
+        var mount = container.querySelector('.cs-iframe-mount');
         var src = mount.getAttribute('data-src');
         var title = mount.getAttribute('data-title') || '';
-        if (!src) return;
-
-        container._iframeDone = true; // Nur einmal laden – nie wieder
-
         var placeholder = container.querySelector('.cs-iframe-placeholder');
 
         // iframe erstellen
@@ -61,63 +76,64 @@
         iframe.setAttribute('allow', 'fullscreen');
         iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
 
-        // Zuerst offscreen laden
+        // Offscreen einhängen
         var root = getOffscreenRoot();
         root.appendChild(iframe);
 
-        var moved = false;
-        function moveToVisible() {
-            if (moved) return;
-            moved = true;
+        var done = false;
+        function onReady() {
+            if (done) return;
+            done = true;
 
-            // Scroll-Position VOR dem Verschieben merken
+            // Scroll-Position merken
             var scrollY = window.scrollY;
             var topBefore = container.getBoundingClientRect().top;
 
-            // iframe in den sichtbaren Mount verschieben
-            if (iframe.parentNode) {
-                iframe.parentNode.removeChild(iframe);
-            }
+            // In den sichtbaren Mount verschieben
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
             mount.appendChild(iframe);
 
             // Placeholder ausblenden
-            if (placeholder) {
-                placeholder.classList.add('is-loaded');
-            }
+            if (placeholder) placeholder.classList.add('is-loaded');
 
-            // Scroll-Korrektur falls sich die Position verändert hat
+            // Scroll-Korrektur
             var topAfter = container.getBoundingClientRect().top;
             var drift = topAfter - topBefore;
             if (Math.abs(drift) > 2) {
                 window.scrollTo(window.scrollX, scrollY + drift);
             }
+
+            // Queue weiter verarbeiten – mit kurzer Verzögerung
+            // damit der Browser zwischen zwei Loads kurz atmen kann
+            isLoading = false;
+            setTimeout(processQueue, 300);
         }
 
-        iframe.addEventListener('load', moveToVisible);
-
-        // Fallback nach 15 Sekunden
-        setTimeout(moveToVisible, 15000);
+        iframe.addEventListener('load', onReady);
+        setTimeout(onReady, 15000); // Fallback
 
         // Laden starten
         iframe.src = src;
     }
 
+    /**
+     * IntersectionObserver – reiht sichtbare Container in die Queue ein
+     */
     function initIframes() {
         var containers = document.querySelectorAll('.cs-preview-full');
         if (!containers.length) return;
 
         if (!('IntersectionObserver' in window)) {
-            loadIframe(containers[0]);
+            enqueueIframe(containers[0]);
             return;
         }
 
         containers.forEach(function (container) {
-            // EIGENER Observer pro Container – wird nach erstem Trigger disconnected
             var obs = new IntersectionObserver(function (entries) {
                 for (var i = 0; i < entries.length; i++) {
                     if (entries[i].isIntersecting) {
-                        loadIframe(container);
-                        obs.disconnect(); // Nie wieder beobachten
+                        enqueueIframe(container);
+                        obs.disconnect();
                         break;
                     }
                 }
