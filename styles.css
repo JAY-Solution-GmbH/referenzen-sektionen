@@ -18,6 +18,9 @@ body {
     max-width: 1200px;
     margin: 0 auto;
     font-size: 16px;
+    /* Eigener Stacking-Context wie beim Konkurrenten */
+    isolation: isolate;
+    overflow-anchor: none;
 }
 
 /* ===== Top Grid ===== */
@@ -121,7 +124,8 @@ body {
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
     border: 1px solid #e5e7eb;
     overflow: hidden;
-    contain: layout paint;
+    /* Maximale Rendering-Isolation */
+    contain: strict;
     overflow-anchor: none;
 }
 
@@ -133,6 +137,28 @@ body {
     border: none;
     display: block;
     background: transparent;
+    /* Eigener GPU-Compositing-Layer → Browser kann den Layer
+       beim Scrollen einfach verschieben statt neu zu rendern */
+    transform: translateZ(0);
+    will-change: transform;
+}
+
+/*
+ * Während der User scrollt: pointer-events auf iframes deaktivieren.
+ * Das verhindert, dass Touch-Events in den iframes verarbeitet werden
+ * und den Main Thread blockieren. Wird per JS umgeschaltet.
+ */
+.is-scrolling .cs-preview-wrap iframe {
+    pointer-events: none !important;
+}
+
+/*
+ * Iframes die weit off-screen sind werden per JS auf display:none gesetzt.
+ * Das stoppt ihr Rendering + CSS-Animationen + requestAnimationFrame,
+ * ohne den iframe aus dem DOM zu entfernen (= kein Reload nötig).
+ */
+.cs-preview-wrap iframe.is-frozen {
+    display: none !important;
 }
 
 .cs-preview-hint {
@@ -183,7 +209,6 @@ body {
         margin-top: 20px;
     }
 
-    /* Touch-Scrolling im iframe ermöglichen ohne Hauptseite zu blockieren */
     .cs-preview-wrap iframe {
         touch-action: pan-x pan-y;
     }
