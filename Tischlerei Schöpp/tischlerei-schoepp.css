@@ -163,93 +163,6 @@
     100% { transform: scale(1); }
 }
 
-/* ===== Iframe Placeholder ===== */
-.cs-iframe-placeholder {
-    width: 100%;
-    height: 100%;
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    background: linear-gradient(135deg, #f8f9fb 0%, #e8ecf1 100%);
-    border: 2px dashed #d0d5dd;
-    transition: background 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
-    position: relative;
-    overflow: hidden;
-}
-
-.cs-iframe-placeholder::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(circle at center, rgba(25, 27, 65, 0.03) 0%, transparent 70%);
-    pointer-events: none;
-}
-
-.cs-iframe-placeholder:hover {
-    background: linear-gradient(135deg, #f0f2f7 0%, #dde2ea 100%);
-    border-color: #191B41;
-    transform: scale(1.005);
-}
-
-.cs-placeholder-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
-    color: #191B41;
-    z-index: 1;
-}
-
-.cs-placeholder-icon {
-    width: 48px;
-    height: 48px;
-    opacity: 0.5;
-    transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.cs-iframe-placeholder:hover .cs-placeholder-icon {
-    opacity: 0.8;
-    transform: translateY(-2px);
-}
-
-.cs-placeholder-text {
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    opacity: 0.7;
-    transition: opacity 0.3s ease;
-}
-
-.cs-iframe-placeholder:hover .cs-placeholder-text {
-    opacity: 1;
-}
-
-/* Lade-Spinner wenn iframe geladen wird */
-.cs-iframe-placeholder.is-loading {
-    pointer-events: none;
-    border-color: #191B41;
-}
-
-.cs-iframe-placeholder.is-loading .cs-placeholder-content {
-    display: none;
-}
-
-.cs-iframe-placeholder.is-loading::after {
-    content: '';
-    width: 36px;
-    height: 36px;
-    border: 3px solid #e0e0e0;
-    border-top-color: #191B41;
-    border-radius: 50%;
-    animation: csSpinner 0.8s linear infinite;
-}
-
-@keyframes csSpinner {
-    to { transform: rotate(360deg); }
-}
-
 /* ===== Scroll-Animationen ===== */
 /* Standardzustand: sichtbar (Fallback falls JS nicht läuft) */
 .cs-animate {
@@ -296,12 +209,5 @@
         right: 15px !important;
         font-size: 11px;
         padding: 4px 12px;
-    }
-    .cs-placeholder-icon {
-        width: 40px;
-        height: 40px;
-    }
-    .cs-placeholder-text {
-        font-size: 14px;
     }
 }
