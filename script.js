@@ -5,18 +5,24 @@
 
     /* =================================================================
      *  IFRAME-MANAGEMENT
-     *  - Desktop:  Automatisch laden wenn sichtbar, entladen wenn nicht
-     *  - Mobile:   Nur per Tap laden, max. 1 gleichzeitig aktiv
+     *  - Automatisches Laden wenn sichtbar (Desktop + Mobile)
+     *  - Mobile:  Max. 1 iframe gleichzeitig im DOM
+     *  - Desktop: Max. 2 iframes gleichzeitig im DOM
+     *  - Entladen sobald Container aus dem erweiterten Viewport scrollt
      * ================================================================= */
 
     var isMobile = window.matchMedia('(max-width: 900px)').matches
                 || ('ontouchstart' in window);
 
-    // Referenz auf den aktuell geladenen iframe-Container (Mobile: max. 1)
-    var activeIframeContainer = null;
+    var MAX_ACTIVE = isMobile ? 1 : 2;
+
+    // Alle Vorschau-Container in Reihenfolge
+    var allContainers = [];
+    // Aktuell aktive (geladene) Container – als Array für FIFO-Verwaltung
+    var activeContainers = [];
 
     /**
-     * Erstellt den iframe im Container und entfernt den Placeholder
+     * Erstellt den iframe im Container
      */
     function loadIframe(container) {
         // Bereits geladen?
@@ -31,126 +37,95 @@
         // Lade-Spinner anzeigen
         placeholder.classList.add('is-loading');
 
+        // Wenn wir das Limit überschreiten: ältesten iframe entladen
+        while (activeContainers.length >= MAX_ACTIVE) {
+            var oldest = activeContainers.shift();
+            if (oldest !== container) {
+                unloadIframe(oldest);
+            }
+        }
+
         var iframe = document.createElement('iframe');
         iframe.setAttribute('src', src);
         iframe.setAttribute('title', title);
-        iframe.setAttribute('loading', 'lazy');
         iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
 
-        // Wenn iframe fertig geladen: Placeholder entfernen
+        // sandbox: erlaubt Skripte und same-origin, blockiert aber Popups etc.
+        iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+
+        // Wenn iframe fertig geladen: Placeholder ausblenden (nicht entfernen – brauchen wir zum Wiederherstellen)
         iframe.addEventListener('load', function () {
-            if (placeholder.parentNode) {
-                placeholder.parentNode.removeChild(placeholder);
-            }
+            placeholder.classList.remove('is-loading');
+            placeholder.classList.add('is-loaded');
         });
 
-        // Timeout-Fallback: nach 8 Sek. Placeholder entfernen auch wenn load-Event nicht feuert
+        // Timeout-Fallback: nach 10 Sek. auch ohne load-Event
         setTimeout(function () {
-            if (placeholder.parentNode) {
-                placeholder.parentNode.removeChild(placeholder);
-            }
-        }, 8000);
+            placeholder.classList.remove('is-loading');
+            placeholder.classList.add('is-loaded');
+        }, 10000);
 
         container.appendChild(iframe);
+        activeContainers.push(container);
     }
 
     /**
-     * Entfernt den iframe und stellt den Placeholder wieder her
+     * Entfernt den iframe und zeigt den Placeholder wieder
      */
     function unloadIframe(container) {
         var iframe = container.querySelector('iframe');
         if (!iframe) return;
 
-        var src   = iframe.getAttribute('src');
-        var title = iframe.getAttribute('title') || '';
+        // iframe komplett aus DOM entfernen → Browser gibt Speicher + GPU frei
+        container.removeChild(iframe);
 
-        // iframe aus DOM entfernen → Browser gibt Speicher frei
-        iframe.parentNode.removeChild(iframe);
-
-        // Placeholder neu aufbauen (falls nicht mehr vorhanden)
-        if (!container.querySelector('.cs-iframe-placeholder')) {
-            var placeholder = document.createElement('div');
-            placeholder.className = 'cs-iframe-placeholder';
-            placeholder.setAttribute('data-src', src);
-            placeholder.setAttribute('data-title', title);
-            placeholder.innerHTML =
-                '<div class="cs-placeholder-content">' +
-                    '<svg class="cs-placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
-                        '<rect x="2" y="3" width="20" height="14" rx="2"/>' +
-                        '<line x1="8" y1="21" x2="16" y2="21"/>' +
-                        '<line x1="12" y1="17" x2="12" y2="21"/>' +
-                    '</svg>' +
-                    '<span class="cs-placeholder-text">Vorschau laden</span>' +
-                '</div>';
-
-            // Tap-Handler erneut anhängen (Mobile)
-            if (isMobile) {
-                placeholder.addEventListener('click', function () {
-                    handleMobileTap(container);
-                });
-            }
-
-            container.appendChild(placeholder);
+        // Placeholder wieder sichtbar machen
+        var placeholder = container.querySelector('.cs-iframe-placeholder');
+        if (placeholder) {
+            placeholder.classList.remove('is-loading', 'is-loaded');
         }
+
+        // Aus aktiv-Liste entfernen
+        var idx = activeContainers.indexOf(container);
+        if (idx > -1) activeContainers.splice(idx, 1);
     }
 
     /**
-     * Mobile: Tap auf Placeholder → alten iframe entladen, neuen laden
-     */
-    function handleMobileTap(container) {
-        // Vorherigen aktiven iframe entladen
-        if (activeIframeContainer && activeIframeContainer !== container) {
-            unloadIframe(activeIframeContainer);
-        }
-        activeIframeContainer = container;
-        loadIframe(container);
-    }
-
-    /**
-     * Initialisiert das Iframe-Management für alle Vorschau-Container
+     * Initialisiert das automatische Iframe-Management
      */
     function initIframes() {
-        var containers = document.querySelectorAll('.cs-preview-full');
-        if (!containers.length) return;
+        allContainers = Array.prototype.slice.call(
+            document.querySelectorAll('.cs-preview-full')
+        );
+        if (!allContainers.length) return;
 
-        if (isMobile) {
-            // ── Mobile: Nur per Tap laden ──
-            containers.forEach(function (container) {
-                var placeholder = container.querySelector('.cs-iframe-placeholder');
-                if (placeholder) {
-                    placeholder.addEventListener('click', function () {
-                        handleMobileTap(container);
-                    });
+        if (!('IntersectionObserver' in window)) {
+            // Fallback ohne IO: nur ersten laden
+            loadIframe(allContainers[0]);
+            return;
+        }
+
+        // rootMargin: auf Mobile enger (weniger pre-loading), auf Desktop etwas großzügiger
+        var margin = isMobile ? '0px 0px 0px 0px' : '300px 0px 300px 0px';
+
+        var observer = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (entry.isIntersecting) {
+                    // Container kommt in den (erweiterten) Viewport → laden
+                    loadIframe(entry.target);
+                } else {
+                    // Container verlässt den Viewport komplett → entladen
+                    unloadIframe(entry.target);
                 }
             });
+        }, {
+            threshold: 0,
+            rootMargin: margin
+        });
 
-        } else {
-            // ── Desktop: Automatisch via IntersectionObserver ──
-            // Nur den sichtbaren iframe laden, Rest entladen
-            if (!('IntersectionObserver' in window)) {
-                // Fallback: Ersten iframe laden
-                loadIframe(containers[0]);
-                return;
-            }
-
-            var desktopObs = new IntersectionObserver(function (entries) {
-                entries.forEach(function (entry) {
-                    if (entry.isIntersecting) {
-                        loadIframe(entry.target);
-                    } else {
-                        // Nur entladen wenn er komplett aus dem Viewport ist
-                        unloadIframe(entry.target);
-                    }
-                });
-            }, {
-                threshold: 0,
-                rootMargin: '200px 0px 200px 0px' // Etwas früher laden für sanften Übergang
-            });
-
-            containers.forEach(function (container) {
-                desktopObs.observe(container);
-            });
-        }
+        allContainers.forEach(function (container) {
+            observer.observe(container);
+        });
     }
 
 
