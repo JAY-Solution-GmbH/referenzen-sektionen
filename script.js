@@ -4,35 +4,25 @@
     var STAGGER_MS = 180;
 
     /* =================================================================
-     *  OFFSCREEN-IFRAME-PRERENDERING
+     *  IFRAME-MANAGEMENT
      *
-     *  Exakt der Ansatz des Konkurrenten (digitalisierungshilfe.at):
+     *  Kernprinzip (von digitalisierungshilfe.at übernommen):
+     *  → Jeder iframe wird EINMAL geladen und NIE WIEDER entladen.
+     *  → contain: layout paint (CSS) sorgt dafür, dass off-screen
+     *    iframes kein Rendering verursachen.
+     *  → Das Entladen war der Fehler – jedes Neu-Laden verursacht
+     *    den Freeze.
      *
-     *  1. Ein versteckter Container (#offscreen-iframe-root) wird
-     *     am body angehängt (fixed, top: -10000px).
-     *
-     *  2. Wenn eine Sektion in den Viewport scrollt, wird der iframe
-     *     ZUERST in diesem unsichtbaren Container erstellt und geladen.
-     *     → Der Browser rendert die externe Website komplett off-screen,
-     *       OHNE den Main-Thread oder das sichtbare Layout zu belasten.
-     *
-     *  3. Erst wenn der iframe sein load-Event feuert (= fertig),
-     *     wird er aus dem offscreen-Container in den sichtbaren
-     *     Mount-Punkt verschoben. → Kein Ruckeln, kein Freeze.
-     *
-     *  4. Beim Wegscollen wird der iframe komplett entfernt.
-     *
-     *  5. Max 1 iframe auf Mobile, max 2 auf Desktop gleichzeitig.
+     *  Ablauf:
+     *  1. IntersectionObserver erkennt dass Container sichtbar wird
+     *  2. iframe wird im unsichtbaren offscreen-Container erstellt
+     *  3. Nach dem load-Event wird iframe in den sichtbaren Bereich
+     *     verschoben → Placeholder blendet aus
+     *  4. Observer wird für diesen Container disconnected → fertig
      * ================================================================= */
 
-    var isMobile = window.matchMedia('(max-width: 900px)').matches;
-    var MAX_ACTIVE = isMobile ? 1 : 2;
-    var activeSlots = []; // { container, iframe }
     var offscreenRoot = null;
 
-    /**
-     * Gibt den offscreen-Container zurück (erstellt ihn beim ersten Aufruf)
-     */
     function getOffscreenRoot() {
         if (offscreenRoot && document.body.contains(offscreenRoot)) {
             return offscreenRoot;
@@ -50,27 +40,17 @@
         return el;
     }
 
-    /**
-     * Lädt einen iframe: erst offscreen, dann nach load in den sichtbaren Container
-     */
     function loadIframe(container) {
         var mount = container.querySelector('.cs-iframe-mount');
-        if (!mount || mount.querySelector('iframe') || container._loading) return;
+        if (!mount || container._iframeDone) return;
 
         var src = mount.getAttribute('data-src');
         var title = mount.getAttribute('data-title') || '';
         if (!src) return;
 
-        container._loading = true;
+        container._iframeDone = true; // Nur einmal laden – nie wieder
 
-        // Scroll-Position merken (für Korrektur nach DOM-Verschiebung)
-        var scrollBefore = container.getBoundingClientRect().top;
-
-        // Ältesten entladen wenn Limit erreicht
-        while (activeSlots.length >= MAX_ACTIVE) {
-            var oldest = activeSlots.shift();
-            unloadIframe(oldest.container);
-        }
+        var placeholder = container.querySelector('.cs-iframe-placeholder');
 
         // iframe erstellen
         var iframe = document.createElement('iframe');
@@ -81,87 +61,47 @@
         iframe.setAttribute('allow', 'fullscreen');
         iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
 
-        // Zuerst in den offscreen-Container einfügen
+        // Zuerst offscreen laden
         var root = getOffscreenRoot();
         root.appendChild(iframe);
 
-        // load-Handler: iframe vom offscreen-Container in den sichtbaren Mount verschieben
         var moved = false;
         function moveToVisible() {
             if (moved) return;
             moved = true;
-            container._loading = false;
 
-            // Aus offscreen entfernen und in den sichtbaren Mount einfügen
-            if (iframe.parentNode === root) {
-                root.removeChild(iframe);
+            // Scroll-Position VOR dem Verschieben merken
+            var scrollY = window.scrollY;
+            var topBefore = container.getBoundingClientRect().top;
+
+            // iframe in den sichtbaren Mount verschieben
+            if (iframe.parentNode) {
+                iframe.parentNode.removeChild(iframe);
             }
             mount.appendChild(iframe);
 
             // Placeholder ausblenden
-            var placeholder = container.querySelector('.cs-iframe-placeholder');
             if (placeholder) {
                 placeholder.classList.add('is-loaded');
             }
 
-            // Scroll-Position korrigieren (verhindert Jump)
-            var scrollAfter = container.getBoundingClientRect().top;
-            var drift = scrollAfter - scrollBefore;
-            if (Math.abs(drift) > 1) {
-                window.scrollTo({
-                    top: window.scrollY + drift,
-                    left: window.scrollX
-                });
+            // Scroll-Korrektur falls sich die Position verändert hat
+            var topAfter = container.getBoundingClientRect().top;
+            var drift = topAfter - topBefore;
+            if (Math.abs(drift) > 2) {
+                window.scrollTo(window.scrollX, scrollY + drift);
             }
-
-            activeSlots.push({ container: container, iframe: iframe });
         }
 
         iframe.addEventListener('load', moveToVisible);
 
-        // Fallback: nach 15s trotzdem verschieben
+        // Fallback nach 15 Sekunden
         setTimeout(moveToVisible, 15000);
 
-        // src setzen → Laden startet
+        // Laden starten
         iframe.src = src;
     }
 
-    /**
-     * Entfernt iframe komplett aus dem DOM
-     */
-    function unloadIframe(container) {
-        var mount = container.querySelector('.cs-iframe-mount');
-        if (!mount) return;
-
-        var iframe = mount.querySelector('iframe');
-        if (iframe) {
-            iframe.src = 'about:blank';
-            mount.removeChild(iframe);
-        }
-
-        // Auch aus offscreen entfernen falls noch dort
-        if (offscreenRoot) {
-            var offscreenFrames = offscreenRoot.querySelectorAll('iframe');
-            offscreenFrames.forEach(function (f) { f.remove(); });
-        }
-
-        container._loading = false;
-
-        // Placeholder wieder einblenden
-        var placeholder = container.querySelector('.cs-iframe-placeholder');
-        if (placeholder) {
-            placeholder.classList.remove('is-loaded');
-        }
-
-        // Aus activeSlots entfernen
-        activeSlots = activeSlots.filter(function (s) {
-            return s.container !== container;
-        });
-    }
-
-    /**
-     * IntersectionObserver für automatisches Laden/Entladen
-     */
     function initIframes() {
         var containers = document.querySelectorAll('.cs-preview-full');
         if (!containers.length) return;
@@ -171,23 +111,21 @@
             return;
         }
 
-        var margin = isMobile ? '100px 0px 100px 0px' : '300px 0px 300px 0px';
-
-        var observer = new IntersectionObserver(function (entries) {
-            entries.forEach(function (entry) {
-                if (entry.isIntersecting) {
-                    loadIframe(entry.target);
-                } else {
-                    unloadIframe(entry.target);
+        containers.forEach(function (container) {
+            // EIGENER Observer pro Container – wird nach erstem Trigger disconnected
+            var obs = new IntersectionObserver(function (entries) {
+                for (var i = 0; i < entries.length; i++) {
+                    if (entries[i].isIntersecting) {
+                        loadIframe(container);
+                        obs.disconnect(); // Nie wieder beobachten
+                        break;
+                    }
                 }
+            }, {
+                threshold: 0,
+                rootMargin: '200px 0px 200px 0px'
             });
-        }, {
-            threshold: 0,
-            rootMargin: margin
-        });
-
-        containers.forEach(function (c) {
-            observer.observe(c);
+            obs.observe(container);
         });
     }
 

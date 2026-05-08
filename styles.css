@@ -139,9 +139,8 @@ body {
     transition: box-shadow 0.3s ease;
     margin-bottom: 0;
     overflow: hidden;
-    /* Isoliert Rendering – Browser behandelt den Container unabhängig */
+    /* contain: layout paint → Browser überspringt Rendering wenn off-screen */
     contain: layout paint;
-    isolation: isolate;
 }
 
 .cs-preview-full:hover {
@@ -158,16 +157,15 @@ body {
     width: 100%;
     height: 100%;
     border: none;
-    border-radius: 16px;
     display: block;
 }
 
 .cs-preview-hint {
-    position: absolute !important;
-    top: -16px !important;
-    right: 30px !important;
-    z-index: 10 !important;
-    background: rgba(255, 255, 255, 0.95);
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.92);
     border: 1px solid #eaeaea;
     padding: 6px 16px;
     font-size: 13px;
@@ -175,7 +173,7 @@ body {
     border-radius: 999px;
     color: #191B41;
     pointer-events: none;
-    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     animation: csHintPulse 2.5s infinite ease-in-out;
 }
 
