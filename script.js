@@ -4,59 +4,108 @@
     var STAGGER_MS = 180;
 
     /* =================================================================
-     *  RENDERING-PERFORMANCE-MANAGEMENT
+     *  RENDERING-PERFORMANCE
      *
-     *  Das Problem war NIE das Laden – sondern das RENDERING.
-     *  Auch nach dem Laden verursachen iframes laufend GPU-Compositing-
-     *  Arbeit (CSS-Animationen, JS, Repaints in der geladenen Website).
+     *  Problem: 4 Webflow-Websites laufen in iframes gleichzeitig –
+     *  jede mit eigenem JS, CSS-Animationen, Cookie-Banners etc.
+     *  Das überfordert die GPU und den Main Thread.
      *
-     *  Lösung: Zwei Mechanismen
-     *
-     *  1. SCROLL-FREEZE: Während der User scrollt, werden alle iframes
-     *     auf pointer-events:none gesetzt. Das verhindert, dass
-     *     Touch-Events in den iframes verarbeitet werden.
-     *
-     *  2. VIEWPORT-FREEZE: Iframes die weit vom Viewport entfernt sind,
-     *     werden auf display:none gesetzt. Das STOPPT komplett:
-     *     - Rendering/Compositing
-     *     - CSS-Animationen
-     *     - requestAnimationFrame
-     *     OHNE den iframe aus dem DOM zu entfernen (= kein Reload nötig).
-     *     Wenn der User zurückscrollt → display:block → sofort da.
+     *  Lösung:
+     *  1. VIEWPORT-FREEZE: Off-screen iframes → display:none
+     *     (stoppt Rendering, JS-rAF, CSS-Animationen komplett)
+     *  2. SCROLL-FREEZE: Während Scroll → pointer-events:none
+     *     (verhindert Touch-Event-Verarbeitung in iframes)
+     *  3. Iframes laden erst per IO wenn sie in Viewport-Nähe kommen
      * ================================================================= */
 
-    var body = document.body || document.documentElement;
-    var allIframes = [];
+    var loadedIframes = new Set();  // Tracking welche iframes fertig geladen sind
+
+    /* ─── Scroll-Freeze ─── */
+
     var scrollTimer = null;
 
-    /**
-     * Scroll-Freeze: pointer-events auf iframes deaktivieren
-     * während des Scrollens
-     */
     function initScrollFreeze() {
-        function onScrollStart() {
-            body.classList.add('is-scrolling');
+        var root = document.documentElement;
 
-            // Scroll-Ende erkennen (150ms ohne Scroll-Event)
+        function onScroll() {
+            root.classList.add('is-scrolling');
             clearTimeout(scrollTimer);
             scrollTimer = setTimeout(function () {
-                body.classList.remove('is-scrolling');
+                root.classList.remove('is-scrolling');
             }, 150);
         }
 
-        window.addEventListener('scroll', onScrollStart, { passive: true });
-        window.addEventListener('touchmove', onScrollStart, { passive: true });
+        window.addEventListener('scroll', onScroll, { passive: true });
+        window.addEventListener('touchmove', onScroll, { passive: true });
     }
 
-    /**
-     * Viewport-Freeze: off-screen iframes auf display:none setzen.
-     * Beobachtet den CONTAINER (hat immer Layout), nicht den iframe
-     * (der bei display:none kein Layout hat → IO würde nie triggern).
-     */
+    /* ─── Iframe Loading (sequential + IO-triggered) ─── */
+
+    var loadQueue = [];
+    var isLoading = false;
+
+    function enqueue(container) {
+        if (container._queued) return;
+        container._queued = true;
+        loadQueue.push(container);
+        processQueue();
+    }
+
+    function processQueue() {
+        if (isLoading || loadQueue.length === 0) return;
+        isLoading = true;
+
+        var container = loadQueue.shift();
+        var iframe = container.querySelector('iframe');
+        if (!iframe) { isLoading = false; processQueue(); return; }
+
+        var src = iframe.getAttribute('data-src');
+        if (!src) { isLoading = false; processQueue(); return; }
+
+        // Load-Event: markiere als geladen, starte nächsten
+        iframe.addEventListener('load', function () {
+            loadedIframes.add(iframe);
+            isLoading = false;
+            // Kurze Pause damit der Browser atmen kann
+            setTimeout(processQueue, 500);
+        }, { once: true });
+
+        // Fallback nach 20s
+        setTimeout(function () {
+            if (isLoading) {
+                loadedIframes.add(iframe);
+                isLoading = false;
+                processQueue();
+            }
+        }, 20000);
+
+        // src setzen → Laden beginnt
+        iframe.src = src;
+    }
+
+    function initIframeLoading() {
+        var containers = document.querySelectorAll('.cs-preview-wrap');
+        if (!containers.length || !('IntersectionObserver' in window)) return;
+
+        containers.forEach(function (container) {
+            var obs = new IntersectionObserver(function (entries) {
+                if (entries[0].isIntersecting) {
+                    enqueue(container);
+                    obs.disconnect();
+                }
+            }, {
+                threshold: 0,
+                rootMargin: '300px 0px 300px 0px'
+            });
+            obs.observe(container);
+        });
+    }
+
+    /* ─── Viewport-Freeze ─── */
+
     function initViewportFreeze() {
         var containers = document.querySelectorAll('.cs-preview-wrap');
-        if (!containers.length) return;
-        if (!('IntersectionObserver' in window)) return;
+        if (!containers.length || !('IntersectionObserver' in window)) return;
 
         var obs = new IntersectionObserver(function (entries) {
             entries.forEach(function (entry) {
@@ -64,13 +113,12 @@
                 if (!iframe) return;
 
                 if (entry.isIntersecting) {
-                    // Container in Viewport-Nähe → iframe aktivieren
+                    // Container in der Nähe → iframe aufwecken
                     iframe.classList.remove('is-frozen');
                 } else {
                     // Container weit weg → iframe einfrieren
-                    // NUR wenn der iframe schon geladen wurde
-                    // (sonst blockiert display:none das lazy loading)
-                    if (iframe.getAttribute('src') && iframe.contentDocument) {
+                    // Nur wenn bereits geladen (Set-basiert, kein contentDocument)
+                    if (loadedIframes.has(iframe)) {
                         iframe.classList.add('is-frozen');
                     }
                 }
@@ -85,10 +133,7 @@
         });
     }
 
-
-    /* =================================================================
-     *  SCROLL-ANIMATIONEN
-     * ================================================================= */
+    /* ─── Scroll-Animationen ─── */
 
     function initAnimations() {
         var elements = document.querySelectorAll('.cs-animate');
@@ -127,18 +172,14 @@
         });
     }
 
-
-    /* =================================================================
-     *  INIT
-     * ================================================================= */
+    /* ─── Init ─── */
 
     function init() {
         initAnimations();
         initScrollFreeze();
-
-        // Viewport-Freeze leicht verzögert starten, damit iframes
-        // die initial sichtbar sind nicht sofort frozen werden
-        setTimeout(initViewportFreeze, 2000);
+        initIframeLoading();
+        // Viewport-Freeze nach 3s starten (damit initiales Laden nicht blockiert wird)
+        setTimeout(initViewportFreeze, 3000);
     }
 
     if (document.readyState === 'loading') {
