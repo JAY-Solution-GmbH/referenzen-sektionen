@@ -4,107 +4,174 @@
     var STAGGER_MS = 180;
 
     /* =================================================================
-     *  GERÄTE-ERKENNUNG
-     *  Prüft ob die Mobile-CSS-Regeln aktiv sind (display des Link-Buttons)
+     *  OFFSCREEN-IFRAME-PRERENDERING
+     *
+     *  Exakt der Ansatz des Konkurrenten (digitalisierungshilfe.at):
+     *
+     *  1. Ein versteckter Container (#offscreen-iframe-root) wird
+     *     am body angehängt (fixed, top: -10000px).
+     *
+     *  2. Wenn eine Sektion in den Viewport scrollt, wird der iframe
+     *     ZUERST in diesem unsichtbaren Container erstellt und geladen.
+     *     → Der Browser rendert die externe Website komplett off-screen,
+     *       OHNE den Main-Thread oder das sichtbare Layout zu belasten.
+     *
+     *  3. Erst wenn der iframe sein load-Event feuert (= fertig),
+     *     wird er aus dem offscreen-Container in den sichtbaren
+     *     Mount-Punkt verschoben. → Kein Ruckeln, kein Freeze.
+     *
+     *  4. Beim Wegscollen wird der iframe komplett entfernt.
+     *
+     *  5. Max 1 iframe auf Mobile, max 2 auf Desktop gleichzeitig.
      * ================================================================= */
 
-    function isMobileView() {
-        // Primär: CSS-Breakpoint
-        if (window.matchMedia('(max-width: 900px)').matches) return true;
-        // Sekundär: Prüfe ob der erste Mobile-Link sichtbar ist (CSS display: flex)
-        var link = document.querySelector('.cs-mobile-link');
-        if (link && getComputedStyle(link).display !== 'none') return true;
-        return false;
+    var isMobile = window.matchMedia('(max-width: 900px)').matches;
+    var MAX_ACTIVE = isMobile ? 1 : 2;
+    var activeSlots = []; // { container, iframe }
+    var offscreenRoot = null;
+
+    /**
+     * Gibt den offscreen-Container zurück (erstellt ihn beim ersten Aufruf)
+     */
+    function getOffscreenRoot() {
+        if (offscreenRoot && document.body.contains(offscreenRoot)) {
+            return offscreenRoot;
+        }
+        var el = document.createElement('div');
+        el.id = 'offscreen-iframe-root';
+        el.style.position = 'fixed';
+        el.style.top = '-10000px';
+        el.style.left = '-10000px';
+        el.style.width = '1px';
+        el.style.height = '1px';
+        el.style.overflow = 'hidden';
+        document.body.appendChild(el);
+        offscreenRoot = el;
+        return el;
     }
 
-    /* =================================================================
-     *  IFRAME-MANAGEMENT (nur Desktop)
-     *
-     *  Auf Mobile werden keine iframes geladen – stattdessen zeigt
-     *  CSS einen Link-Button an. Das eliminiert ALLE Performance-
-     *  Probleme auf Mobilgeräten.
-     *
-     *  Auf Desktop: IntersectionObserver lädt/entlädt iframes
-     *  automatisch, max. 2 gleichzeitig aktiv.
-     * ================================================================= */
-
-    var MAX_ACTIVE = 2;
-    var activeContainers = [];
-
+    /**
+     * Lädt einen iframe: erst offscreen, dann nach load in den sichtbaren Container
+     */
     function loadIframe(container) {
-        if (container.querySelector('iframe')) return;
+        var mount = container.querySelector('.cs-iframe-mount');
+        if (!mount || mount.querySelector('iframe') || container._loading) return;
 
-        var placeholder = container.querySelector('.cs-iframe-placeholder');
-        if (!placeholder) return;
+        var src = mount.getAttribute('data-src');
+        var title = mount.getAttribute('data-title') || '';
+        if (!src) return;
 
-        var src   = placeholder.getAttribute('data-src');
-        var title = placeholder.getAttribute('data-title') || '';
+        container._loading = true;
 
-        placeholder.classList.add('is-loading');
+        // Scroll-Position merken (für Korrektur nach DOM-Verschiebung)
+        var scrollBefore = container.getBoundingClientRect().top;
 
         // Ältesten entladen wenn Limit erreicht
-        while (activeContainers.length >= MAX_ACTIVE) {
-            var oldest = activeContainers.shift();
-            if (oldest !== container) {
-                unloadIframe(oldest);
-            }
+        while (activeSlots.length >= MAX_ACTIVE) {
+            var oldest = activeSlots.shift();
+            unloadIframe(oldest.container);
         }
 
+        // iframe erstellen
         var iframe = document.createElement('iframe');
         iframe.setAttribute('title', title);
+        iframe.setAttribute('loading', 'eager');
+        iframe.setAttribute('fetchpriority', 'high');
+        iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups');
+        iframe.setAttribute('allow', 'fullscreen');
         iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
-        iframe.setAttribute('loading', 'lazy');
 
-        iframe.addEventListener('load', function () {
-            placeholder.classList.remove('is-loading');
-            placeholder.classList.add('is-loaded');
-        });
+        // Zuerst in den offscreen-Container einfügen
+        var root = getOffscreenRoot();
+        root.appendChild(iframe);
 
-        container.appendChild(iframe);
+        // load-Handler: iframe vom offscreen-Container in den sichtbaren Mount verschieben
+        var moved = false;
+        function moveToVisible() {
+            if (moved) return;
+            moved = true;
+            container._loading = false;
 
-        // src separat setzen
-        requestAnimationFrame(function () {
-            iframe.setAttribute('src', src);
-        });
+            // Aus offscreen entfernen und in den sichtbaren Mount einfügen
+            if (iframe.parentNode === root) {
+                root.removeChild(iframe);
+            }
+            mount.appendChild(iframe);
 
-        activeContainers.push(container);
-
-        // Fallback-Timeout
-        setTimeout(function () {
-            if (placeholder.parentNode) {
-                placeholder.classList.remove('is-loading');
+            // Placeholder ausblenden
+            var placeholder = container.querySelector('.cs-iframe-placeholder');
+            if (placeholder) {
                 placeholder.classList.add('is-loaded');
             }
-        }, 12000);
+
+            // Scroll-Position korrigieren (verhindert Jump)
+            var scrollAfter = container.getBoundingClientRect().top;
+            var drift = scrollAfter - scrollBefore;
+            if (Math.abs(drift) > 1) {
+                window.scrollTo({
+                    top: window.scrollY + drift,
+                    left: window.scrollX
+                });
+            }
+
+            activeSlots.push({ container: container, iframe: iframe });
+        }
+
+        iframe.addEventListener('load', moveToVisible);
+
+        // Fallback: nach 15s trotzdem verschieben
+        setTimeout(moveToVisible, 15000);
+
+        // src setzen → Laden startet
+        iframe.src = src;
     }
 
+    /**
+     * Entfernt iframe komplett aus dem DOM
+     */
     function unloadIframe(container) {
-        var iframe = container.querySelector('iframe');
-        if (!iframe) return;
+        var mount = container.querySelector('.cs-iframe-mount');
+        if (!mount) return;
 
-        iframe.removeAttribute('src');
-        iframe.parentNode.removeChild(iframe);
+        var iframe = mount.querySelector('iframe');
+        if (iframe) {
+            iframe.src = 'about:blank';
+            mount.removeChild(iframe);
+        }
 
+        // Auch aus offscreen entfernen falls noch dort
+        if (offscreenRoot) {
+            var offscreenFrames = offscreenRoot.querySelectorAll('iframe');
+            offscreenFrames.forEach(function (f) { f.remove(); });
+        }
+
+        container._loading = false;
+
+        // Placeholder wieder einblenden
         var placeholder = container.querySelector('.cs-iframe-placeholder');
         if (placeholder) {
-            placeholder.classList.remove('is-loading', 'is-loaded');
+            placeholder.classList.remove('is-loaded');
         }
 
-        var idx = activeContainers.indexOf(container);
-        if (idx > -1) activeContainers.splice(idx, 1);
+        // Aus activeSlots entfernen
+        activeSlots = activeSlots.filter(function (s) {
+            return s.container !== container;
+        });
     }
 
+    /**
+     * IntersectionObserver für automatisches Laden/Entladen
+     */
     function initIframes() {
-        // Auf Mobile: NICHTS tun – CSS zeigt Link-Buttons statt iframes
-        if (isMobileView()) return;
-
-        var allContainers = document.querySelectorAll('.cs-preview-full');
-        if (!allContainers.length) return;
+        var containers = document.querySelectorAll('.cs-preview-full');
+        if (!containers.length) return;
 
         if (!('IntersectionObserver' in window)) {
-            loadIframe(allContainers[0]);
+            loadIframe(containers[0]);
             return;
         }
+
+        var margin = isMobile ? '100px 0px 100px 0px' : '300px 0px 300px 0px';
 
         var observer = new IntersectionObserver(function (entries) {
             entries.forEach(function (entry) {
@@ -116,11 +183,11 @@
             });
         }, {
             threshold: 0,
-            rootMargin: '200px 0px 200px 0px'
+            rootMargin: margin
         });
 
-        allContainers.forEach(function (container) {
-            observer.observe(container);
+        containers.forEach(function (c) {
+            observer.observe(c);
         });
     }
 
@@ -133,30 +200,27 @@
         var elements = document.querySelectorAll('.cs-animate');
         if (!elements.length) return;
 
-        elements.forEach(function(el) {
+        elements.forEach(function (el) {
             el.classList.add('js-ready');
         });
 
         if (!('IntersectionObserver' in window)) {
-            elements.forEach(function(el) {
+            elements.forEach(function (el) {
                 el.classList.remove('js-ready');
                 el.classList.add('is-visible');
             });
             return;
         }
 
-        var animObs = new IntersectionObserver(function(entries) {
-            entries.forEach(function(entry) {
+        var animObs = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
                 if (!entry.isIntersecting) return;
-
                 var el = entry.target;
                 var index = parseInt(el.dataset.index, 10) || 0;
-
-                setTimeout(function() {
+                setTimeout(function () {
                     el.classList.remove('js-ready');
                     el.classList.add('is-visible');
                 }, index * STAGGER_MS);
-
                 animObs.unobserve(el);
             });
         }, {
@@ -164,7 +228,7 @@
             rootMargin: '0px 0px -60px 0px'
         });
 
-        elements.forEach(function(el) {
+        elements.forEach(function (el) {
             animObs.observe(el);
         });
     }

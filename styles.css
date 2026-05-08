@@ -133,18 +133,28 @@ body {
     width: 100%;
     height: 600px;
     position: relative;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
     border-radius: 16px;
-    background: #fff;
+    background: #f5f5f7;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
     transition: box-shadow 0.3s ease;
     margin-bottom: 0;
+    overflow: hidden;
+    /* Isoliert Rendering – Browser behandelt den Container unabhängig */
+    contain: layout paint;
+    isolation: isolate;
 }
 
 .cs-preview-full:hover {
     box-shadow: 0 30px 60px rgba(0, 0, 0, 0.22);
 }
 
-.cs-preview-full iframe {
+/* Mount-Container für den iframe */
+.cs-iframe-mount {
+    position: absolute;
+    inset: 0;
+}
+
+.cs-iframe-mount iframe {
     width: 100%;
     height: 100%;
     border: none;
@@ -175,71 +185,45 @@ body {
     100% { transform: scale(1); }
 }
 
-/* ===== Iframe Placeholder (Lade-Indikator, nur Desktop) ===== */
+/* ===== Iframe Placeholder (Lade-Spinner) ===== */
 .cs-iframe-placeholder {
-    width: 100%;
-    height: 100%;
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, #f8f9fb 0%, #eef0f4 100%);
     position: absolute;
     inset: 0;
     z-index: 3;
-    transition: opacity 0.5s ease, visibility 0.5s ease;
-}
-
-.cs-placeholder-content {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 16px;
-    color: #191B41;
+    justify-content: center;
+    background: #f5f5f7;
+    border-radius: 16px;
+    transition: opacity 0.4s ease;
 }
 
-.cs-placeholder-icon {
-    width: 44px;
-    height: 44px;
-    opacity: 0.35;
+.cs-iframe-placeholder.is-loaded {
+    opacity: 0;
+    pointer-events: none;
 }
 
-.cs-placeholder-text {
+.cs-spinner-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 8px 16px;
+    border-radius: 999px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    font-family: 'Cabin Condensed', sans-serif;
     font-size: 14px;
-    font-weight: 500;
-    letter-spacing: 0.3px;
-    opacity: 0.45;
+    color: #555;
 }
 
-/* Lade-Zustand */
-.cs-iframe-placeholder.is-loading .cs-placeholder-content {
-    display: none;
-}
-
-.cs-iframe-placeholder.is-loading::after {
-    content: '';
-    width: 32px;
-    height: 32px;
-    border: 3px solid #e0e0e0;
-    border-top-color: #191B41;
-    border-radius: 50%;
-    animation: csSpinner 0.8s linear infinite;
+.cs-spinner-svg {
+    width: 16px;
+    height: 16px;
+    animation: csSpinner 1s linear infinite;
 }
 
 @keyframes csSpinner {
     to { transform: rotate(360deg); }
-}
-
-/* Geladen → Placeholder ausblenden */
-.cs-iframe-placeholder.is-loaded {
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-}
-
-/* ===== Mobile Link-Button (ersetzt iframe auf Mobile) ===== */
-.cs-mobile-link {
-    display: none;
 }
 
 /* ===== Scroll-Animationen ===== */
@@ -262,9 +246,7 @@ body {
     will-change: auto;
 }
 
-/* ========================================================
-   RESPONSIVE – MOBILE
-   ======================================================== */
+/* ===== Responsive ===== */
 @media (max-width: 900px) {
     .cs-top-grid {
         grid-template-columns: 1fr;
@@ -272,67 +254,29 @@ body {
         margin-bottom: 40px;
     }
 
-    /* Hover-Effekte auf Touch komplett deaktivieren */
     .cs-quote:hover,
     .cs-meta-info:hover {
         transform: none;
         box-shadow: inherit;
     }
 
-    /* ── Preview-Container auf Mobile: kein iframe ── */
     .cs-preview-full {
-        height: auto;
+        height: 450px;
         margin-top: 20px;
-        box-shadow: none;
-        background: transparent;
     }
 
     .cs-preview-full:hover {
-        box-shadow: none;
-    }
-
-    /* Iframe + Placeholder auf Mobile komplett ausblenden */
-    .cs-preview-full iframe,
-    .cs-iframe-placeholder {
-        display: none !important;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
     }
 
     .cs-preview-hint {
-        display: none;
+        animation: none;
+        top: -14px !important;
+        right: 15px !important;
+        font-size: 11px;
+        padding: 4px 12px;
     }
 
-    /* Stattdessen: Sauberer Link-Button */
-    .cs-mobile-link {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        width: 100%;
-        padding: 18px 24px;
-        background: radial-gradient(circle at center, rgb(70, 68, 111) 0%, rgb(0, 0, 26) 100%);
-        color: #ffffff;
-        text-decoration: none;
-        border-radius: 16px;
-        font-family: 'Cabin Condensed', sans-serif;
-        font-size: 1rem;
-        font-weight: 600;
-        letter-spacing: 0.3px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .cs-mobile-link:active {
-        transform: scale(0.98);
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-    }
-
-    .cs-mobile-link-icon {
-        width: 20px;
-        height: 20px;
-        flex-shrink: 0;
-    }
-
-    /* Animationen auf Mobile deutlich vereinfachen */
     .cs-animate.js-ready {
         transform: translateY(30px);
     }
