@@ -1,0 +1,213 @@
+.cs-section {
+    font-family: 'Cabin Condensed', sans-serif;
+    color: #000;
+    background-color: #ffffff;
+    padding: 60px 20px 0 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+    font-size: 16px;
+    box-sizing: border-box;
+    overflow-x: hidden; /* Verhindert horizontalen Scrollbalken bei Slide-Animation */
+}
+
+.cs-top-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    margin-bottom: 50px;
+    align-items: stretch;
+}
+
+.cs-info-side {
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+
+.cs-label-wrapper {
+    margin-bottom: 15px;
+}
+
+.cs-industry-label {
+    display: inline-block;
+    background-color: #f2f2f2;
+    color: #333333;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: background-color 0.3s ease;
+}
+
+.cs-industry-label:hover {
+    background-color: #e6e6e6;
+}
+
+.cs-info-side h3 {
+    font-size: 2.2rem;
+    margin: 0 0 20px 0;
+    color: #191B41;
+    line-height: 1.1;
+}
+
+.cs-meta-info {
+    background-color: #f0f2f5;
+    border-left: 4px solid #191B41;
+    padding: 20px;
+    border-radius: 0 16px 16px 0;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.cs-meta-info:hover {
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+    transform: translateX(3px);
+}
+
+.cs-meta-info p {
+    margin: 0 0 8px 0;
+    line-height: 1.5;
+}
+
+.cs-meta-info p:last-child {
+    margin-bottom: 0;
+}
+
+.cs-meta-info strong {
+    color: #191B41;
+}
+
+.cs-quote-side {
+    display: flex;
+}
+
+.cs-quote {
+    margin: 0;
+    padding: 30px;
+    background: radial-gradient(circle at center, rgb(70, 68, 111) 0%, rgb(0, 0, 26) 100%);
+    color: #ffffff;
+    border-radius: 16px;
+    font-size: 1.15rem;
+    line-height: 1.6;
+    font-style: italic;
+    text-align: left;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    box-sizing: border-box;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+    transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1), box-shadow 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+.cs-quote:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+}
+
+.cs-quote cite {
+    display: block;
+    margin-top: 20px;
+    font-style: normal;
+    font-weight: 700;
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+.cs-preview-full {
+    width: 100%;
+    height: 600px;
+    position: relative;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+    border-radius: 16px;
+    background: #fff;
+    transition: box-shadow 0.3s ease;
+    margin-bottom: 0;
+}
+
+.cs-preview-full:hover {
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.22);
+}
+
+.cs-preview-full iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 16px;
+    display: block;
+}
+
+.cs-preview-hint {
+    position: absolute !important;
+    top: -16px !important;
+    right: 30px !important;
+    z-index: 999 !important;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #eaeaea;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 999px;
+    color: #191B41;
+    pointer-events: none;
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+    animation: csHintPulse 2.5s infinite ease-in-out;
+}
+
+@keyframes csHintPulse {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.05); box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
+    100% { transform: scale(1); }
+}
+
+/* ===== Scroll-Animationen ===== */
+/* Standardzustand: sichtbar (Fallback falls JS nicht läuft) */
+.cs-animate {
+    opacity: 1;
+    transform: translateX(0) scale(1) translateY(0);
+    transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+    /* will-change bewusst NICHT hier – würde dauerhaft GPU-Speicher belegen */
+}
+
+/* JS setzt diesen Startzustand sobald es läuft */
+/* will-change nur hier aktiv: Browser kann GPU-Layer vorbereiten */
+.cs-animate.js-ready {
+    opacity: 0;
+    transform: translateX(110px) scale(0.92) translateY(16px);
+    will-change: transform, opacity;
+}
+
+/* Eingeblendet – will-change wird zurückgesetzt um GPU-Speicher freizugeben */
+.cs-animate.is-visible {
+    opacity: 1;
+    transform: translateX(0) scale(1) translateY(0);
+    will-change: auto;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+    .cs-top-grid {
+        grid-template-columns: 1fr;
+        gap: 30px;
+        margin-bottom: 40px;
+    }
+    .cs-quote:hover,
+    .cs-meta-info:hover {
+        transform: none;
+    }
+    .cs-preview-full {
+        height: 450px;
+        margin-top: 20px;
+    }
+    .cs-preview-hint {
+        animation: none;
+        top: -14px !important;
+        right: 15px !important;
+        font-size: 11px;
+        padding: 4px 12px;
+    }
+}
